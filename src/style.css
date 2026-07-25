@@ -1,0 +1,273 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0b14;
+  --surface: #15151f;
+  --surface-2: #1e1e2c;
+  --text: #f2f2f7;
+  --text-dim: #9797ab;
+  --accent: #5ec8ff;
+  --accent-2: #ff6fae;
+  --good: #4ade80;
+  --danger: #f87171;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  gap: 20px;
+  text-align: center;
+}
+
+h1 {
+  font-size: clamp(22px, 6vw, 30px);
+  margin: 0;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 18px;
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+p {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--text-dim);
+  max-width: 32em;
+}
+
+button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn {
+  appearance: none;
+  border: none;
+  border-radius: 16px;
+  padding: 16px 28px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  min-width: 220px;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #3b82f6);
+  color: #06131f;
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--surface-2);
+  color: var(--text-dim);
+  min-width: unset;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+
+.btn-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  transition: background 0.2s ease;
+}
+
+.status-dot.live {
+  background: var(--good);
+  box-shadow: 0 0 8px var(--good);
+}
+
+.top-bar {
+  position: absolute;
+  top: env(safe-area-inset-top);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--text-dim);
+  z-index: 5;
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--surface-2);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-track {
+  width: 100%;
+  max-width: 280px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.15s ease;
+}
+
+.calibration-screen {
+  justify-content: flex-start;
+  padding-top: max(56px, env(safe-area-inset-top));
+  gap: 8px;
+}
+
+.calibration-target {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 8px rgba(94, 200, 255, 0.18);
+  transition:
+    left 0.35s ease,
+    top 0.35s ease,
+    transform 0.25s ease;
+}
+
+.calibration-target--capturing {
+  transform: scale(0.55);
+  background: var(--accent-2);
+  box-shadow: 0 0 0 8px rgba(255, 111, 174, 0.2);
+}
+
+.gaze-screen {
+  padding: 0;
+  gap: 0;
+}
+
+.gaze-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg);
+}
+
+.gaze-cell {
+  background: var(--surface);
+  border-radius: 6px;
+  transition: background 0.1s ease, transform 0.1s ease;
+}
+
+.gaze-cell--active {
+  background: var(--accent);
+  transform: scale(0.96);
+}
+
+.floating-btn {
+  position: absolute;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
+.viewer-canvas-host {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.viewer-canvas-host canvas {
+  display: block;
+  touch-action: none;
+}
+
+.viewer-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.viewer-overlay .btn {
+  pointer-events: auto;
+}
+
+.back-btn {
+  position: absolute;
+  top: env(safe-area-inset-top);
+  left: 12px;
+  z-index: 6;
+}
