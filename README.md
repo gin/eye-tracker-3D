@@ -1,12 +1,16 @@
 # Eye Tracker 3D
 
 A mobile PWA demo: webcam-based head/eye tracking drives (1) a gaze-controlled
-square-selection demo and (2) a pseudo-3D parallax viewer for a photo and a
-video — all running entirely on-device, no server, no video ever leaves the
-phone.
+square-selection demo, (2) a pseudo-3D parallax viewer for a photo and a
+video, and (3) a gaze-aimed shooting game — all running entirely on-device,
+no server, no video ever leaves the phone.
 
 **Flow:** enable camera → 9-point gaze calibration → live gaze-tracked square
-grid → home → "View 3D image" / "View 3D video".
+grid → home → "View 3D image" / "View 3D video" / "Laser duck hunt".
+
+A **FPS** button sits in the bottom-left corner of every screen; it toggles a
+live frame-rate readout in the top-right. It is off by default, remembers its
+state, and runs no measuring loop at all while hidden.
 
 ## How the pseudo-3D effect works
 
@@ -67,6 +71,30 @@ looks like a window with real depth behind it rather than a flat image.
   cursor) specifically because cell-level accuracy is achievable; pixel-level
   isn't, with any webcam-based approach.
 
+## Laser duck hunt
+
+A 30-second round played against your own camera feed. Ducks fly across the
+screen, a reticle tracks where you are looking, and **opening your mouth
+fires** a laser from each of your on-screen eyes at whatever the reticle is
+over. Every hit is 100 points; the final score is written to a local top-ten
+leaderboard shown on the game-over card.
+
+Two details that are less obvious than they look:
+
+- **Mouth detection uses two thresholds, not one.** Aperture is the inner-lip
+  gap divided by the outer-eye-corner span, which makes it independent of how
+  far away you are sitting. Firing then needs the value to cross
+  `MOUTH_FIRE_AT` going up and fall back under `MOUTH_REARM_AT` before it can
+  fire again — a single threshold in the middle of a noisy signal would
+  machine-gun whenever your mouth rested near it.
+- **The hit radius is deliberately loose.** Webcam gaze is cell-accurate at
+  best (see above), so the reticle is scored against a radius of ~7.5% of the
+  screen's short side. Tightening it doesn't make the game harder, it makes it
+  unplayable. The reticle turns pink when a duck is inside it, so aiming stays
+  legible even though it is forgiving.
+
+All game constants live at the top of `src/screens/DuckHuntScreen.ts`.
+
 ## Setup
 
 ```sh
@@ -119,8 +147,10 @@ src/
   gaze/           Calibration fit + live gaze prediction (pure math, no DOM)
   depth/          transformers.js depth-estimation wrapper
   render/         Three.js parallax scene + canvas-fit/media-loading helpers
+  game/           Duck flight + collision, leaderboard storage (pure logic)
+  ui/             Frame-rate meter overlay
   screens/        One module per screen (permission, calibration, gaze-demo,
-                  home, image-viewer, video-viewer)
+                  home, image-viewer, video-viewer, duck-hunt)
 scripts/
   scene.mjs             Procedural SVG scene generator (shared by image + video)
   generate-assets.mjs   Renders public/demo/* and public/icons/* via sharp + ffmpeg
@@ -146,3 +176,68 @@ actually taps into a 3D viewer, not on first paint.
  │ Overshoot from prediction     │ —       │ 1.1%    │ no oscillation │         
  └───────────────────────────────┴─────────┴─────────┴────────────────┘   
 ```
+
+Duck Hunt keeps its transparent canvas at one backing pixel per CSS pixel,
+even on Retina displays; the large vector shapes do not benefit from a 2×
+buffer, while clearing and compositing it over live video otherwise costs 4×
+as much. Face landmark inference is queued after the current rendering phase
+and adapts between roughly 20–30 Hz according to inference time, while the
+game itself continues rendering at the display refresh rate. Stable tracking
+state does not touch the DOM, and the game render loop stops completely on the
+results screen.
+
+## Duck Hunt game
+
+```
+ Laser duck hunt                                                                
+                                                                                
+ ┌──────────────┐     ┌──────────┐                                              
+ │              │     │          │                                              
+ │ mouth opens  │     │   gaze   │                                              
+ │              │     │          │                                              
+ └───────┬──────┘     └─────┬────┘                                              
+         │                  │                                                   
+         │                  │                                                   
+         │                  │                                                   
+         │                  │                                                   
+         ▼                  ▼                                                   
+ ┌──────────────┐     ┌──────────┐                                              
+ │              │     │          │                                              
+ │              │     │          │                                              
+ │ rising edge  │     │ One Euro │                                              
+ │ + hysteresis │     │  filter  │                                              
+ │              │     │          │                                              
+ └───────┬──────┘     └─────┬────┘                                              
+         │                  │                                                   
+         │                  │                                                   
+         ├─────────┐        │                                                   
+         │         │        │                                                   
+         ▼         │        ▼                                                   
+ ┌──────────────┐  │  ┌──────────┐                                              
+ │              │  │  │          │                                              
+ │              │  │  │          │                                              
+ │  laser from  │  │  │ reticle  │                                              
+ │  both eyes   │  │  │          │                                              
+ │              │  │  │          │                                              
+ └───────┬──────┘  │  └─────┬────┘                                              
+         │         │        │                                                   
+         │         │        │                                                   
+         │         └────────┘                                                   
+         │                                                                      
+         ▼                                                                      
+ ┌──────────────┐                                                               
+ │              │                                                               
+ │   hit test   │                                                               
+ │              │                                                               
+ └───────┬──────┘                                                               
+         │                                                                      
+         │                                                                      
+         │                                                                      
+         │                                                                      
+         ▼                                                                      
+ ┌──────────────┐                                                               
+ │              │                                                               
+ │    score     │                                                               
+ │              │                                                               
+ └──────────────┘                                                               
+ ```

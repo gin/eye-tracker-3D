@@ -8,6 +8,14 @@ const WASM_BASE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${ME
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task";
 
+// Landmark inference is synchronous even with the GPU delegate. Keep it out
+// of the rendering phase and cap its share of the main-thread budget. Slow
+// devices automatically settle toward 20 Hz; fast devices stay near 30 Hz.
+const FASTEST_DETECTION_INTERVAL_MS = 30;
+const SLOWEST_DETECTION_INTERVAL_MS = 50;
+const INFERENCE_BUDGET_MULTIPLIER = 4;
+const INFERENCE_DURATION_ALPHA = 0.2;
+
 // Landmark indices from MediaPipe's 478-point face mesh (iris refinement on).
 const LEFT_IRIS = 468;
 const LEFT_EYE_OUTER = 33;
@@ -20,6 +28,11 @@ const RIGHT_EYE_OUTER = 263;
 const RIGHT_EYE_INNER = 362;
 const RIGHT_EYE_TOP = 386;
 const RIGHT_EYE_BOTTOM = 374;
+
+// Inner lip centers: the gap between these two closes to nearly zero with
+// the mouth shut, which the outer lip contour never does.
+const UPPER_LIP_INNER = 13;
+const LOWER_LIP_INNER = 14;
 
 interface Point2 {
   x: number;
@@ -61,6 +74,22 @@ function extractIrisOffset(landmarks: readonly Point2[]): IrisOffset {
   };
 }
 
+/**
+ * Mouth aperture as a fraction of face width. Dividing by the outer-eye-
+ * corner span is what makes the number comparable between a face close to
+ * the camera and one further back — the raw lip gap alone just tracks how
+ * near the user is sitting.
+ */
+function extractMouthOpenness(landmarks: readonly Point2[]): number {
+  const upper = landmarks[UPPER_LIP_INNER]!;
+  const lower = landmarks[LOWER_LIP_INNER]!;
+  const leftCorner = landmarks[LEFT_EYE_OUTER]!;
+  const rightCorner = landmarks[RIGHT_EYE_OUTER]!;
+
+  const faceWidth = Math.hypot(leftCorner.x - rightCorner.x, leftCorner.y - rightCorner.y) || 1e-6;
+  return Math.hypot(upper.x - lower.x, upper.y - lower.y) / faceWidth;
+}
+
 function extractHeadPosition(matrix: Matrix | undefined): HeadPosition | null {
   if (!matrix || matrix.data.length < 16) return null;
   // MediaPipe's MatrixData proto is documented column-major: for a 4x4
@@ -87,6 +116,9 @@ export class FaceTracker {
   private videoFrameHandle = 0;
   private lastDetectTimeMs = 0;
   private lastFrameTime = -1;
+  private detectionTimerHandle = 0;
+  private lastDetectionStartedAt = -Infinity;
+  private averageDetectionMs = 0;
   private stopped = false;
 
   subscribe(listener: TrackerListener): () => void {
@@ -98,10 +130,22 @@ export class FaceTracker {
     return this.latest;
   }
 
+  /**
+   * The element MediaPipe reads each frame. Exposed so a screen can show the
+   * user their own camera feed by attaching it to the DOM; detection does
+   * not care whether it is attached, so callers must remove it again on
+   * unmount rather than tearing anything down here.
+   */
+  get videoElement(): HTMLVideoElement | null {
+    return this.video;
+  }
+
   async start(): Promise<void> {
     if (this.status !== "idle" && this.status !== "error") return;
     this.stopped = false;
     this.error = null;
+    this.lastDetectionStartedAt = -Infinity;
+    this.averageDetectionMs = 0;
 
     try {
       this.status = "requesting-camera";
@@ -163,6 +207,8 @@ export class FaceTracker {
     this.stopped = true;
     cancelAnimationFrame(this.rafHandle);
     this.video?.cancelVideoFrameCallback?.(this.videoFrameHandle);
+    window.clearTimeout(this.detectionTimerHandle);
+    this.detectionTimerHandle = 0;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.landmarker?.close();
     this.landmarker = null;
@@ -173,12 +219,11 @@ export class FaceTracker {
   }
 
   /**
-   * Runs one detection per *camera* frame rather than per animation frame.
-   * Inference is the most expensive thing on this thread, and a 30 fps
-   * camera behind a 60–120 Hz rAF loop meant most calls re-analyzed a frame
-   * that had already been analyzed — full cost, no fresher data.
-   * `requestVideoFrameCallback` fires exactly once per presented frame; the
-   * rAF fallback de-dupes on the video clock to get the same property.
+   * Observes each camera frame, then queues at most one inference after the
+   * browser finishes the current rendering phase. Running detectForVideo
+   * directly inside requestVideoFrameCallback blocks requestAnimationFrame;
+   * processing all 60 camera frames can therefore turn a 60 fps scene into a
+   * 30–45 fps one. The queue below adapts between 20 and ~30 detections/sec.
    */
   private startDetectionLoop(video: HTMLVideoElement): void {
     // Typed as always-present by lib.dom, but only actually shipped in
@@ -188,7 +233,7 @@ export class FaceTracker {
     if (requestVideoFrame) {
       const onVideoFrame = (): void => {
         if (this.stopped) return;
-        this.detectCurrentFrame();
+        this.queueCurrentFrame();
         this.videoFrameHandle = requestVideoFrame(onVideoFrame);
       };
       this.videoFrameHandle = requestVideoFrame(onVideoFrame);
@@ -199,11 +244,30 @@ export class FaceTracker {
       if (this.stopped) return;
       if (video.currentTime !== this.lastFrameTime) {
         this.lastFrameTime = video.currentTime;
-        this.detectCurrentFrame();
+        this.queueCurrentFrame();
       }
       this.rafHandle = requestAnimationFrame(onAnimationFrame);
     };
     onAnimationFrame();
+  }
+
+  private queueCurrentFrame(): void {
+    if (this.stopped || this.detectionTimerHandle !== 0) return;
+    const now = performance.now();
+    const intervalMs = Math.min(
+      SLOWEST_DETECTION_INTERVAL_MS,
+      Math.max(FASTEST_DETECTION_INTERVAL_MS, this.averageDetectionMs * INFERENCE_BUDGET_MULTIPLIER),
+    );
+    if (now - this.lastDetectionStartedAt < intervalMs) return;
+
+    // A zero-delay task runs after the current video/rAF rendering update,
+    // preventing synchronous inference from delaying the frame being painted.
+    this.detectionTimerHandle = window.setTimeout(() => {
+      this.detectionTimerHandle = 0;
+      if (this.stopped) return;
+      this.lastDetectionStartedAt = performance.now();
+      this.detectCurrentFrame();
+    }, 0);
   }
 
   private detectCurrentFrame(): void {
@@ -215,8 +279,17 @@ export class FaceTracker {
     // is coarsened enough on some browsers to repeat within a single frame.
     const timestampMs = Math.max(performance.now(), this.lastDetectTimeMs + 0.01);
     this.lastDetectTimeMs = timestampMs;
-    this.emit(landmarker.detectForVideo(video, timestampMs));
+    const startedAt = performance.now();
+    const result = landmarker.detectForVideo(video, timestampMs);
+    const durationMs = performance.now() - startedAt;
+    this.averageDetectionMs =
+      this.averageDetectionMs === 0
+        ? durationMs
+        : this.averageDetectionMs +
+          (durationMs - this.averageDetectionMs) * INFERENCE_DURATION_ALPHA;
+    this.emit(result);
   }
+
 
   private emit(result: FaceLandmarkerResult): void {
     const landmarks = result.faceLandmarks[0];
@@ -228,6 +301,13 @@ export class FaceTracker {
       faceDetected,
       headPosition: faceDetected ? extractHeadPosition(result.facialTransformationMatrixes[0]) : null,
       irisOffset: faceDetected ? extractIrisOffset(landmarks) : null,
+      mouthOpenness: faceDetected ? extractMouthOpenness(landmarks) : null,
+      eyeCenters: faceDetected
+        ? {
+            left: { x: landmarks[LEFT_IRIS]!.x, y: landmarks[LEFT_IRIS]!.y },
+            right: { x: landmarks[RIGHT_IRIS]!.x, y: landmarks[RIGHT_IRIS]!.y },
+          }
+        : null,
     };
 
     this.latest = sample;

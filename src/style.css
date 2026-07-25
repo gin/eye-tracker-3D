@@ -271,3 +271,159 @@ button {
   left: 12px;
   z-index: 6;
 }
+
+.fps-toggle {
+  position: fixed;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 50;
+  appearance: none;
+  border: 1px solid var(--surface-2);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: rgba(21, 21, 31, 0.6);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.fps-toggle--on {
+  background: rgba(94, 200, 255, 0.25);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.fps-meter {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  z-index: 50;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(11, 11, 20, 0.55);
+  color: var(--good);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.game-screen {
+  display: block;
+  padding: 0;
+}
+
+.game-cam-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  contain: strict;
+}
+
+.game-cam {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Mirrored so the feed reads as a mirror rather than as a camera aimed back at you. */
+  transform: scaleX(-1);
+}
+
+.game-stage {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+  contain: strict;
+  pointer-events: none;
+}
+
+.game-score,
+.game-clock {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.game-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.game-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(58px, calc(env(safe-area-inset-bottom) + 46px));
+  margin: 0;
+  z-index: 5;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.game-over {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  /* Opaque enough to avoid recompositing a blurred live video every frame. */
+  background: rgba(11, 11, 20, 0.97);
+  text-align: center;
+}
+
+/* Needed because .game-over sets an explicit display, which otherwise wins over [hidden]. */
+.game-over[hidden] {
+  display: none;
+}
+
+.game-final {
+  margin: 0;
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 320px;
+  max-height: 44vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.leaderboard-row strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.leaderboard-row--new {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.leaderboard-when {
+  font-size: 12px;
+}

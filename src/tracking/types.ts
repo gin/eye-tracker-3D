@@ -35,11 +35,29 @@ export interface IrisOffset {
   y: number;
 }
 
+/**
+ * A point in MediaPipe's normalized camera-frame space: (0,0) is the frame's
+ * top-left and (1,1) its bottom-right, independent of how that frame is
+ * later scaled, cropped or mirrored for display.
+ */
+export interface FramePoint {
+  x: number;
+  y: number;
+}
+
 export interface TrackingSample {
   timestampMs: number;
   faceDetected: boolean;
   headPosition: HeadPosition | null;
   irisOffset: IrisOffset | null;
+  /**
+   * Inner-lip gap divided by face width, so it means the same thing at any
+   * distance from the camera. Roughly 0.01 with the mouth shut, rising past
+   * 0.1 when it is clearly open.
+   */
+  mouthOpenness: number | null;
+  /** Iris centers in camera-frame space, for anchoring effects to the on-screen face. */
+  eyeCenters: { left: FramePoint; right: FramePoint } | null;
 }
 
 export type TrackerListener = (sample: TrackingSample) => void;

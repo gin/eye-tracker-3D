@@ -1,7 +1,14 @@
 import { FaceTracker } from "../tracking/faceTracker";
 import type { GazeModel } from "../gaze/gazeModel";
 
-export type ScreenId = "permission" | "calibration" | "gaze-demo" | "home" | "image-viewer" | "video-viewer";
+export type ScreenId =
+  | "permission"
+  | "calibration"
+  | "gaze-demo"
+  | "home"
+  | "image-viewer"
+  | "video-viewer"
+  | "duck-hunt";
 export type UnmountFn = () => void;
 export type ScreenFactory = (root: HTMLElement, app: App) => UnmountFn | void;
 /** Resolves a screen on demand — lets heavy screens (three.js, transformers.js) load via dynamic import. */

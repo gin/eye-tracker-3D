@@ -15,6 +15,7 @@ export const HomeScreen: ScreenFactory = (root, app) => {
       <div class="btn-row">
         <button class="btn btn-primary" id="view-image" type="button">View 3D image</button>
         <button class="btn btn-primary" id="view-video" type="button">View 3D video</button>
+        <button class="btn btn-primary" id="duck-hunt" type="button">Laser duck hunt</button>
       </div>
       <button class="btn btn-ghost" id="recalibrate" type="button">Recalibrate gaze</button>
     </div>
@@ -22,5 +23,6 @@ export const HomeScreen: ScreenFactory = (root, app) => {
 
   root.querySelector("#view-image")!.addEventListener("click", () => app.go("image-viewer"));
   root.querySelector("#view-video")!.addEventListener("click", () => app.go("video-viewer"));
+  root.querySelector("#duck-hunt")!.addEventListener("click", () => app.go("duck-hunt"));
   root.querySelector("#recalibrate")!.addEventListener("click", () => app.go("calibration"));
 };
