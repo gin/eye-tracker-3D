@@ -72,7 +72,7 @@ function extractHeadPosition(matrix: Matrix | undefined): HeadPosition | null {
 /**
  * Wraps camera acquisition + MediaPipe FaceLandmarker into a small
  * push-based tracker: subscribe for a live stream of {@link TrackingSample}s
- * driven by requestAnimationFrame.
+ * driven by the camera's own frame callbacks.
  */
 export class FaceTracker {
   status: TrackerStatus = "idle";
@@ -84,6 +84,9 @@ export class FaceTracker {
   private readonly listeners = new Set<TrackerListener>();
   private latest: TrackingSample | null = null;
   private rafHandle = 0;
+  private videoFrameHandle = 0;
+  private lastDetectTimeMs = 0;
+  private lastFrameTime = -1;
   private stopped = false;
 
   subscribe(listener: TrackerListener): () => void {
@@ -103,7 +106,16 @@ export class FaceTracker {
     try {
       this.status = "requesting-camera";
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        // A faster capture rate is the cheapest latency win there is: it
+        // shortens the gap between the head moving and a frame existing to
+        // detect it in. Detection is driven per *delivered* frame below, so
+        // asking for 60 costs nothing on hardware that only grants 30.
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 60 },
+        },
         audio: false,
       });
 
@@ -116,16 +128,30 @@ export class FaceTracker {
 
       this.status = "loading-model";
       const fileset = await FilesetResolver.forVisionTasks(WASM_BASE_URL);
-      this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+      const landmarkerOptions = {
         runningMode: "VIDEO",
         numFaces: 1,
         outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: true,
-      });
+      } as const;
+      // Prefer the GPU delegate: landmarking runs on the main thread, where
+      // CPU inference can eat most of a phone's frame budget and stall
+      // rendering. Not every WebGL/driver combination accepts it, so fall
+      // back rather than leaving the tracker dead.
+      try {
+        this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
+          ...landmarkerOptions,
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+        });
+      } catch {
+        this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
+          ...landmarkerOptions,
+          baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+        });
+      }
 
       this.status = "no-face";
-      this.loop();
+      this.startDetectionLoop(video);
     } catch (err) {
       this.status = "error";
       this.error = err instanceof Error ? err : new Error(String(err));
@@ -136,22 +162,61 @@ export class FaceTracker {
   stop(): void {
     this.stopped = true;
     cancelAnimationFrame(this.rafHandle);
+    this.video?.cancelVideoFrameCallback?.(this.videoFrameHandle);
     this.stream?.getTracks().forEach((t) => t.stop());
     this.landmarker?.close();
     this.landmarker = null;
     this.stream = null;
     this.video = null;
+    this.lastFrameTime = -1;
     this.status = "idle";
   }
 
-  private loop = (): void => {
-    if (this.stopped || !this.video || !this.landmarker) return;
-    if (this.video.readyState >= 2) {
-      const result = this.landmarker.detectForVideo(this.video, performance.now());
-      this.emit(result);
+  /**
+   * Runs one detection per *camera* frame rather than per animation frame.
+   * Inference is the most expensive thing on this thread, and a 30 fps
+   * camera behind a 60–120 Hz rAF loop meant most calls re-analyzed a frame
+   * that had already been analyzed — full cost, no fresher data.
+   * `requestVideoFrameCallback` fires exactly once per presented frame; the
+   * rAF fallback de-dupes on the video clock to get the same property.
+   */
+  private startDetectionLoop(video: HTMLVideoElement): void {
+    // Typed as always-present by lib.dom, but only actually shipped in
+    // Safari 15.4+ / Firefox 132+, so this needs a real runtime test.
+    const requestVideoFrame =
+      typeof video.requestVideoFrameCallback === "function" ? video.requestVideoFrameCallback.bind(video) : null;
+    if (requestVideoFrame) {
+      const onVideoFrame = (): void => {
+        if (this.stopped) return;
+        this.detectCurrentFrame();
+        this.videoFrameHandle = requestVideoFrame(onVideoFrame);
+      };
+      this.videoFrameHandle = requestVideoFrame(onVideoFrame);
+      return;
     }
-    this.rafHandle = requestAnimationFrame(this.loop);
-  };
+
+    const onAnimationFrame = (): void => {
+      if (this.stopped) return;
+      if (video.currentTime !== this.lastFrameTime) {
+        this.lastFrameTime = video.currentTime;
+        this.detectCurrentFrame();
+      }
+      this.rafHandle = requestAnimationFrame(onAnimationFrame);
+    };
+    onAnimationFrame();
+  }
+
+  private detectCurrentFrame(): void {
+    const video = this.video;
+    const landmarker = this.landmarker;
+    if (!video || !landmarker || video.readyState < 2) return;
+
+    // detectForVideo rejects non-monotonic timestamps, and performance.now()
+    // is coarsened enough on some browsers to repeat within a single frame.
+    const timestampMs = Math.max(performance.now(), this.lastDetectTimeMs + 0.01);
+    this.lastDetectTimeMs = timestampMs;
+    this.emit(landmarker.detectForVideo(video, timestampMs));
+  }
 
   private emit(result: FaceLandmarkerResult): void {
     const landmarks = result.faceLandmarks[0];

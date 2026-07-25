@@ -47,12 +47,21 @@ looks like a window with real depth behind it rather than a flat image.
   iOS 26, but onnxruntime-web's WebGPU/JSEP backend has an open, severe
   resource-leak bug on Safari/WebKit 26 ([microsoft/onnxruntime#26827](https://github.com/microsoft/onnxruntime/issues/26827)).
   Revisit `device: "wasm"` in `depthEstimator.ts` once that's fixed.
+- **Safari caps rendering at 60 fps by default, even on a 120 Hz ProMotion
+  iPhone.** There is no web API to opt out: the ceiling is a user-side
+  toggle at *Settings → Apps → Safari → Advanced → Feature Flags → Prefer
+  Page Rendering Updates near 60fps* (turn it **off**). Everything in the
+  render path is frame-rate independent, so the app simply runs at whatever
+  cadence Safari grants — but do not expect 120 fps without that flag.
 - **Parallax direction/strength is tunable, not device-verified.** The sign
   and scale of the head→camera mapping (`HEAD_SENSITIVITY`, `MAX_EYE_OFFSET`
   in `parallaxScene.ts`) were validated for internal consistency (renders
   correctly, responds to input, math is sound) but not on a physical iPhone
   — I have no camera in this environment. If the parallax feels backwards or
-  too subtle/aggressive on-device, tune those two constants first.
+  too subtle/aggressive on-device, tune those two constants first. If it
+  feels laggy or jittery instead, the knobs are `SPEED_BETA` (raise to cut
+  lag during motion), `MIN_CUTOFF_HZ` (lower to steady a still image), and
+  `PREDICTION_SECONDS` (lower if fast head turns overshoot).
 - **Gaze calibration accuracy**: webcam-based gaze estimation is inherently
   coarse. The live demo maps predicted gaze to a grid cell (not a precise
   cursor) specifically because cell-level accuracy is achievable; pixel-level
@@ -120,3 +129,20 @@ scripts/
 The two viewer screens are code-split behind dynamic `import()` — three.js
 and transformers.js (~1 MB before gzip) are only fetched when a user
 actually taps into a 3D viewer, not on first paint.
+
+## Optimization
+```
+ ┌───────────────────────────────┬─────────┬─────────┬────────────────┐         
+ │                               │ old EMA │ new     │                │         
+ ├───────────────────────────────┼─────────┼─────────┼────────────────┤         
+ │ Lag, 0.5 Hz head sway         │ 167 ms  │ 67 ms   │ −100 ms        │         
+ ├───────────────────────────────┼─────────┼─────────┼────────────────┤         
+ │ Tracking RMS error            │ 0.0344  │ 0.0076  │ 4.5× better    │         
+ ├───────────────────────────────┼─────────┼─────────┼────────────────┤         
+ │ Settle to 95% after fast move │ 650 ms  │ 117 ms  │ 5.5× faster    │         
+ ├───────────────────────────────┼─────────┼─────────┼────────────────┤         
+ │ Jitter at rest (sd)           │ 0.00065 │ 0.00090 │ ~0.2% of range │         
+ ├───────────────────────────────┼─────────┼─────────┼────────────────┤         
+ │ Overshoot from prediction     │ —       │ 1.1%    │ no oscillation │         
+ └───────────────────────────────┴─────────┴─────────┴────────────────┘   
+```
