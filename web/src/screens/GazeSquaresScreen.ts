@@ -1,10 +1,11 @@
 import type { ScreenFactory } from "../app/App";
 import { predictGaze } from "../gaze/gazeModel";
-import { ExponentialSmoother } from "../tracking/smoothing";
+import { OneEuroFilter } from "../tracking/smoothing";
 
 const GRID_COLS = 4;
 const GRID_ROWS = 6;
-const SMOOTHING_ALPHA = 0.25;
+const GAZE_MIN_CUTOFF_HZ = 1.2;
+const GAZE_SPEED_BETA = 0.8;
 
 export const GazeSquaresScreen: ScreenFactory = (root, app) => {
   if (!app.gazeModel) {
@@ -36,15 +37,19 @@ export const GazeSquaresScreen: ScreenFactory = (root, app) => {
     cells.push(cell);
   }
 
-  const smoothX = new ExponentialSmoother(SMOOTHING_ALPHA);
-  const smoothY = new ExponentialSmoother(SMOOTHING_ALPHA);
+  const smoothX = new OneEuroFilter(GAZE_MIN_CUTOFF_HZ, GAZE_SPEED_BETA);
+  const smoothY = new OneEuroFilter(GAZE_MIN_CUTOFF_HZ, GAZE_SPEED_BETA);
+  let lastSampleTimeMs = 0;
   let activeIndex = -1;
 
   const unsubscribe = app.tracker.subscribe((sample) => {
     if (!sample.faceDetected || !sample.irisOffset || !sample.headPosition) return;
     const gaze = predictGaze(model, sample.irisOffset.x, sample.irisOffset.y, sample.headPosition.x, sample.headPosition.y);
-    const x = smoothX.next(gaze.x);
-    const y = smoothY.next(gaze.y);
+    const dt = lastSampleTimeMs === 0 ? 1 / 30 : Math.min(0.1, Math.max(1 / 120, (sample.timestampMs - lastSampleTimeMs) / 1000));
+    lastSampleTimeMs = sample.timestampMs;
+    const x = smoothX.next(gaze.x, dt);
+    const y = smoothY.next(gaze.y, dt);
+
     const col = Math.min(GRID_COLS - 1, Math.max(0, Math.floor(x * GRID_COLS)));
     const row = Math.min(GRID_ROWS - 1, Math.max(0, Math.floor(y * GRID_ROWS)));
     const index = row * GRID_COLS + col;

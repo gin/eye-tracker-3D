@@ -14,7 +14,7 @@ export type ScreenFactory = (root: HTMLElement, app: App) => UnmountFn | void;
 /** Resolves a screen on demand — lets heavy screens (three.js, transformers.js) load via dynamic import. */
 export type ScreenLoader = () => Promise<ScreenFactory>;
 
-const GAZE_MODEL_STORAGE_KEY = "eye3d.gazeModel.v1";
+const GAZE_MODEL_STORAGE_KEY = "eye3d.gazeModel.v2";
 
 function loadStoredGazeModel(): GazeModel | null {
   try {

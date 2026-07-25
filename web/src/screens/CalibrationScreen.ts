@@ -1,21 +1,36 @@
 import type { ScreenFactory } from "../app/App";
 import { GazeCalibrator } from "../gaze/gazeModel";
 
-/** Normalized (0..1) screen positions, corners-then-edges-then-center order. */
-const POINTS: ReadonlyArray<{ x: number; y: number }> = [
-  { x: 0.08, y: 0.1 },
-  { x: 0.92, y: 0.1 },
-  { x: 0.08, y: 0.9 },
-  { x: 0.92, y: 0.9 },
-  { x: 0.5, y: 0.1 },
-  { x: 0.08, y: 0.5 },
-  { x: 0.92, y: 0.5 },
-  { x: 0.5, y: 0.9 },
-  { x: 0.5, y: 0.5 },
+interface CalibrationPoint {
+  displayX: number;
+  displayY: number;
+  screenX: number;
+  screenY: number;
+}
+
+/**
+ * Edge targets stay inset far enough to see and fixate, but are deliberately
+ * labeled as 0/1. This maps the user's comfortable eye-motion range onto the
+ * whole display instead of leaving every prediction compressed toward 0.5.
+ * Center is repeated last so slow posture drift cannot silently skew edges.
+ */
+const POINTS: readonly CalibrationPoint[] = [
+  { displayX: 0.5, displayY: 0.5, screenX: 0.5, screenY: 0.5 },
+  { displayX: 0.08, displayY: 0.1, screenX: 0, screenY: 0 },
+  { displayX: 0.5, displayY: 0.1, screenX: 0.5, screenY: 0 },
+  { displayX: 0.92, displayY: 0.1, screenX: 1, screenY: 0 },
+  { displayX: 0.92, displayY: 0.5, screenX: 1, screenY: 0.5 },
+  { displayX: 0.92, displayY: 0.9, screenX: 1, screenY: 1 },
+  { displayX: 0.5, displayY: 0.9, screenX: 0.5, screenY: 1 },
+  { displayX: 0.08, displayY: 0.9, screenX: 0, screenY: 1 },
+  { displayX: 0.08, displayY: 0.5, screenX: 0, screenY: 0.5 },
+  { displayX: 0.5, displayY: 0.5, screenX: 0.5, screenY: 0.5 },
 ];
 
-const SETTLE_MS = 500; // let the user find the new target before sampling
-const CAPTURE_MS = 700; // sampling window per point
+// The dot itself moves for 350 ms in CSS. This leaves another 400 ms for the
+// eye's saccade to settle before any sample can enter the fit.
+const SETTLE_MS = 750;
+const CAPTURE_MS = 700;
 
 export const CalibrationScreen: ScreenFactory = (root, app) => {
   root.innerHTML = `
@@ -39,12 +54,12 @@ export const CalibrationScreen: ScreenFactory = (root, app) => {
     const point = POINTS[index]!;
     progressEl.textContent = `Look at the dot — ${index + 1} / ${POINTS.length}`;
     targetEl.classList.remove("calibration-target--capturing");
-    targetEl.style.left = `${point.x * 100}%`;
-    targetEl.style.top = `${point.y * 100}%`;
+    targetEl.style.left = `${point.displayX * 100}%`;
+    targetEl.style.top = `${point.displayY * 100}%`;
     timeoutHandle = window.setTimeout(() => beginCapture(point), SETTLE_MS);
   };
 
-  const beginCapture = (point: { x: number; y: number }): void => {
+  const beginCapture = (point: CalibrationPoint): void => {
     if (cancelled) return;
     targetEl.classList.add("calibration-target--capturing");
     const captureUntil = performance.now() + CAPTURE_MS;
@@ -53,8 +68,8 @@ export const CalibrationScreen: ScreenFactory = (root, app) => {
       if (performance.now() > captureUntil) return;
       if (!sample.faceDetected || !sample.irisOffset || !sample.headPosition) return;
       calibrator.addSample({
-        screenX: point.x,
-        screenY: point.y,
+        screenX: point.screenX,
+        screenY: point.screenY,
         irisX: sample.irisOffset.x,
         irisY: sample.irisOffset.y,
         headX: sample.headPosition.x,

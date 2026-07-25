@@ -67,9 +67,12 @@ looks like a window with real depth behind it rather than a flat image.
   lag during motion), `MIN_CUTOFF_HZ` (lower to steady a still image), and
   `PREDICTION_SECONDS` (lower if fast head turns overshoot).
 - **Gaze calibration accuracy**: webcam-based gaze estimation is inherently
-  coarse. The live demo maps predicted gaze to a grid cell (not a precise
-  cursor) specifically because cell-level accuracy is achievable; pixel-level
-  isn't, with any webcam-based approach.
+  coarse, so the live demo targets grid-cell rather than pixel-level accuracy.
+  Calibration maps its visible inset edge dots onto the full `0…1` range,
+  robustly trims transient frames at each dot, and fits standardized features
+  so ridge regularization cannot compress the corners toward the center.
+  Calibration storage is versioned; model changes trigger one fresh pass
+  instead of silently continuing to use stale weights.
 
 ## Laser duck hunt
 
