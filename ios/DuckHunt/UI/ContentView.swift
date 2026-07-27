@@ -48,10 +48,12 @@ struct ContentView: View {
         }
     }
 
+    /// The user's own eyes are the strongest gaze attractor on the screen, so the camera
+    /// feed is blacked out entirely while we ask them to look at a dot.
     private var cameraDimming: Double {
         switch model.destination {
         case .calibration:
-            0.45
+            1
         case .home:
             0.58
         case .game:

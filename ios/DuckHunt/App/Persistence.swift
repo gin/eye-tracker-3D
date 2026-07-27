@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 enum GazeModelStore {
-    private static let key = "duckHunt.gazeModel.v1"
+    private static let key = "duckHunt.gazeModel.v2"
 
     static func load(from defaults: UserDefaults = .standard) -> GazeModel? {
         guard

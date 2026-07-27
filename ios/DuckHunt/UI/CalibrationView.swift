@@ -28,20 +28,22 @@ struct CalibrationView: View {
                     VStack(spacing: 6) {
                         Text("CALIBRATE YOUR GAZE")
                             .font(.headline.weight(.black))
-                        Text("Keep your head still. Follow the dot using only your eyes.")
+                        Text("Hold the phone wherever it feels comfortable and look straight at each dot.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
+                        if let accuracy = model.calibrationAccuracyMillimetres {
+                            Text("Last run measured \(accuracy, format: .number.precision(.fractionLength(1))) mm of error")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                     .gamePanel()
 
                     Spacer()
 
                     FaceStatusPill(status: model.trackingStatus)
-                    Text(model.isCapturingCalibration ? "Hold your gaze" : "Find the next dot")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(model.isCapturingCalibration ? Theme.accent : .secondary)
-                        .animation(.easeInOut(duration: 0.2), value: model.isCapturingCalibration)
+                    gazePrompt
                 }
                 .padding(20)
 
@@ -76,11 +78,29 @@ struct CalibrationView: View {
                 .frame(width: 18, height: 18)
                 .shadow(color: Theme.accent, radius: 12)
         }
-        .scaleEffect(model.isCapturingCalibration ? 0.82 : 1)
+        .opacity(model.isCapturingCalibration ? 1 : 0.82)
         .position(x: anchor.x * size.width, y: anchor.y * size.height)
         .animation(.easeInOut(duration: 0.35), value: model.calibrationIndex)
-        .animation(.easeInOut(duration: 0.18), value: model.isCapturingCalibration)
         .accessibilityLabel("Calibration target")
+    }
+
+    /// Coaching supersedes the idle prompt: a rejected frame is the only thing the user can
+    /// act on, and stacking both lines would make the panel jump between dots.
+    private var gazePrompt: some View {
+        Group {
+            if let coaching = model.calibrationCoaching {
+                Label(coaching, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.yellow)
+            } else {
+                Text(model.isCapturingCalibration ? "Hold your gaze" : "Find the next dot")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(model.isCapturingCalibration ? Theme.accent : .secondary)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .animation(.easeInOut(duration: 0.25), value: model.calibrationCoaching)
+        .animation(.easeInOut(duration: 0.2), value: model.isCapturingCalibration)
     }
 
     private func calibrationError(_ message: String) -> some View {
@@ -88,10 +108,10 @@ struct CalibrationView: View {
             .ignoresSafeArea()
             .overlay {
                 VStack(spacing: 18) {
-                    Image(systemName: "eye.trianglebadge.exclamationmark")
+                    Image(systemName: "eye.circle")
                         .font(.system(size: 42))
-                        .foregroundStyle(.yellow)
-                    Text("Try Calibration Again")
+                        .foregroundStyle(Theme.cyan)
+                    Text("Let's Calibrate Again")
                         .font(.title2.bold())
                     Text(message)
                         .foregroundStyle(.secondary)
